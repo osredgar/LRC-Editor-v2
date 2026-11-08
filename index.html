@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Editor de letras LRC</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: "Segoe UI", sans-serif;
+      background: #10131b;
+      color: #eef1f8;
+      accent-color: #9c87ff;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 32px 20px;
+    }
+
+    h1 { margin: 0 0 8px; font-size: 1.8rem; }
+    p { color: #aab1c3; line-height: 1.5; }
+
+    .panel {
+      margin-top: 20px;
+      padding: 20px;
+      border: 1px solid #303747;
+      border-radius: 12px;
+      background: #191e2a;
+    }
+
+    .file-row, .actions, .status-row {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .file-row { margin-bottom: 16px; }
+    .file-picker { flex: 1 1 280px; }
+    label { display: block; margin-bottom: 6px; color: #c4cada; }
+    input[type="file"], input[type="text"] {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #3a4355;
+      border-radius: 7px;
+      color: #eef1f8;
+      background: #11151e;
+    }
+
+    audio { display: block; width: 100%; margin: 18px 0 10px; }
+
+    .status-row {
+      justify-content: space-between;
+      color: #b7bfd1;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #clock { color: #c9bcff; font-weight: 700; }
+
+    .lyrics-editor {
+      font: 12pt "Lucida Console";
+      display: block;
+      width: 100%;
+      min-height: 320px;
+      max-height: 320px;
+      overflow-y: scroll;
+      padding: 14px;
+      border: 1px solid #3a4355;
+      border-radius: 8px;
+      color: #eef1f8;
+      background: #11151e;
+      scroll-behavior: smooth;
+      scrollbar-width: 1px;
+    }
+
+    .lyric-line {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      margin: 0;
+      padding: 5px 7px;
+      border-radius: 6px;
+    }
+
+    /* .lyric-line.active { background: #292f3e; color: #9c87ff;} */
+    .lyric-line.active { background: #c9bcfd; color: #212529; }
+    /* .lyric-line.active { background: #9c87ff; } */
+
+    .line-text {
+      flex: 1;
+      min-width: 0;
+      min-height: 30px;
+      padding: 4px 2px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      outline: none;
+    }
+
+    .line-text:empty::before {
+      content: "\00a0";
+    }
+
+    .line-button {
+      flex: 0 0 38px;
+      min-height: 34px;
+      padding: 4px;
+    }
+
+    .line-button.delete-line {
+      border-color: #8f021c;
+      color: #ee0707;
+      font-weight: bold;
+    }
+
+    button {
+      min-height: 40px;
+      padding: 9px 14px;
+      border: 1px solid #48536a;
+      border-radius: 7px;
+      color: #eef1f8;
+      background: #292f3e;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    button:hover { background: #353d50; }
+    button.primary { border-color: #9c87ff; background: #715bd0; font-weight: 700; }
+    button.primary:hover { background: #826ce2; }
+
+    .save-name { flex: 1 1 220px; }
+    #message { min-height: 1.5em; margin: 12px 0 0; color: #c9bcff; }
+    #message.error { color: #ff9a9a; }
+    .hint { margin-bottom: 0; font-size: .92rem; }
+
+    @media (max-width: 600px) {
+      body { padding: 20px 12px; }
+      .panel { padding: 14px; }
+      .lyrics-editor { min-height: 300px; }
+    }
+  </style>
+</head>
+<body>
+  <h1>Editor de letras LRC</h1>
+  <p>Carregue a música e a letra. Cada linha tem controles para reproduzir a partir do seu tempo ou marcar o tempo atual. As linhas de seção entre colchetes, como <code>[Refrão]</code>, podem ser removidas.</p>
+
+  <section class="panel" aria-label="Arquivos e reprodução">
+    <div class="file-row">
+      <div class="file-picker">
+        <label for="audioFile">Música</label>
+        <input id="audioFile" type="file" accept="audio/*,.m4a,.mp3,.wav,.ogg,.flac,.aac">
+      </div>
+      <div class="file-picker">
+        <label for="lyricsFile">Letra (.txt ou .lrc)</label>
+        <input id="lyricsFile" type="file" accept=".txt,.lrc,text/plain">
+      </div>
+    </div>
+
+    <audio id="audio" controls preload="metadata"></audio>
+    <div class="status-row">
+      <span id="trackName">Nenhuma música carregada</span>
+      <span id="clock">00:00.00</span>
+    </div>
+  </section>
+
+  <section class="panel" aria-label="Editor da letra">
+    <label>Letra — uma linha por verso. Clique no texto para editar e na linha para selecioná-la.</label>
+    <div id="lyrics" class="lyrics-editor" role="list" aria-label="Linhas da letra" rezisable="false"></div>
+    <div class="actions" style="margin-top: 14px">
+      <button id="markButton" class="primary" type="button" hidden>Marcar linha selecionada (Espaço)</button>
+      <button id="clearButton" type="button">Limpar tempos</button>
+      <button id="removeEmptyLinesButton" type="button">Remover linhas vazias</button>
+      <button id="removeBracketLinesButton" type="button">Remover linhas [texto]</button>
+      <input id="saveName" class="save-name" type="text" value="letra.lrc" aria-label="Nome do arquivo LRC">
+      <button id="saveButton" type="button">Salvar .lrc</button>
+    </div>
+    <p id="message" role="status" aria-live="polite"></p>
+    <p class="hint">O timer registra o tempo atual sem pausar a música e seleciona a linha seguinte. O botão de reprodução de cada linha volta à sua marcação. Pressione Enter no texto para dividir a linha ou Backspace no início para juntá-la à anterior.</p>
+  </section>
+
+  <script>
+    const audio = document.getElementById("audio");
+    const audioFile = document.getElementById("audioFile");
+    const lyricsFile = document.getElementById("lyricsFile");
+    const editor = document.getElementById("lyrics");
+    const clock = document.getElementById("clock");
+    const trackName = document.getElementById("trackName");
+    const saveName = document.getElementById("saveName");
+    const message = document.getElementById("message");
+    const timestampPrefix = /^(?:\[\d+:\d{2}(?:\.\d{1,3})?\])+\s*/;
+    const timestampAtStart = /^\[(\d+):(\d{2})(?:\.(\d{1,3}))?\]/;
+    let audioUrl = null;
+    let activeLine = 0;
+
+    function getLineRows() {
+      return [...editor.querySelectorAll(".lyric-line")];
+    }
+
+    function getLines() {
+      return getLineRows().map((row) => row.querySelector(".line-text").textContent);
+    }
+
+    function setActiveLine(index, focus = false) {
+      const rows = getLineRows();
+      if (!rows.length) {
+        activeLine = 0;
+        return;
+      }
+
+      activeLine = Math.max(0, Math.min(index, rows.length - 1));
+      rows.forEach((row, rowIndex) => {
+        row.classList.toggle("active", rowIndex === activeLine);
+        row.setAttribute("aria-current", rowIndex === activeLine ? "true" : "false");
+      });
+
+      if (focus) {
+        const row = rows[activeLine];
+        row.scrollIntoView({ block: "nearest" });
+        const text = row.querySelector(".line-text");
+        text.focus();
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(text);
+        range.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+    }
+
+    function placeCaret(text, offset) {
+      const selection = window.getSelection();
+      const range = document.createRange();
+      if (text.firstChild) {
+        range.setStart(text.firstChild, Math.min(offset, text.firstChild.length));
+      } else {
+        range.setStart(text, 0);
+      }
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+
+    function getTextOffset(text, node, offset) {
+      const range = document.createRange();
+      range.selectNodeContents(text);
+      range.setEnd(node, offset);
+      return range.toString().length;
+    }
+
+    function renderLines(lines, selectedIndex = 0) {
+      editor.replaceChildren();
+      lines.forEach((line, index) => {
+        const row = document.createElement("p");
+        row.className = "lyric-line";
+        row.setAttribute("role", "listitem");
+
+        const text = document.createElement("span");
+        text.className = "line-text";
+        text.contentEditable = "plaintext-only";
+        text.spellcheck = false;
+        text.setAttribute("aria-label", `Texto da linha ${index + 1}`);
+        text.textContent = line;
+
+        const playButton = document.createElement("button");
+        playButton.className = "line-button";
+        playButton.type = "button";
+        playButton.dataset.action = "play";
+        playButton.textContent = "▶";
+        playButton.title = `Reproduzir a partir da marcação da linha ${index + 1}`;
+        playButton.setAttribute("aria-label", `Reproduzir a partir da marcação da linha ${index + 1}`);
+
+        const timerButton = document.createElement("button");
+        timerButton.className = "line-button";
+        timerButton.type = "button";
+        timerButton.dataset.action = "timer";
+        timerButton.textContent = "⏱";
+        timerButton.title = `Marcar o tempo da linha ${index + 1}`;
+        timerButton.setAttribute("aria-label", `Marcar o tempo da linha ${index + 1}`);
+
+        const deleteButton = document.createElement("button");
+        deleteButton.className = "line-button delete-line";
+        deleteButton.type = "button";
+        deleteButton.dataset.action = "delete";
+        deleteButton.textContent = "✕";
+        deleteButton.title = `Excluir a linha ${index + 1}`;
+        deleteButton.setAttribute("aria-label", `Excluir a linha ${index + 1}`);
+
+        row.append(text, playButton, timerButton, deleteButton);
+        editor.append(row);
+      });
+      setActiveLine(selectedIndex);
+    }
+
+    function deleteLine(index) {
+      const lines = getLines();
+      if (lines.length <= 1) {
+        renderLines([""], 0);
+        showMessage("Linha excluída. O editor manteve uma linha vazia para continuar.");
+        return;
+      }
+
+      lines.splice(index, 1);
+      const nextIndex = Math.min(index, lines.length - 1);
+      renderLines(lines, nextIndex);
+      setActiveLine(nextIndex, true);
+      showMessage("Linha excluída.");
+    }
+
+    function showMessage(text, isError = false) {
+      message.textContent = text;
+      message.classList.toggle("error", isError);
+    }
+
+    function formatClock(seconds) {
+      if (!Number.isFinite(seconds) || seconds < 0) seconds = 0;
+      const centiseconds = Math.floor(seconds * 100 + 0.5);
+      const minutes = Math.floor(centiseconds / 6000);
+      const wholeSeconds = Math.floor(centiseconds / 100) % 60;
+      const fraction = centiseconds % 100;
+      return `${String(minutes).padStart(2, "0")}:${String(wholeSeconds).padStart(2, "0")}.${String(fraction).padStart(2, "0")}`;
+    }
+
+    function makeTimestamp(seconds) {
+      const centiseconds = Math.floor(seconds * 100 + 0.5);
+      const minutes = Math.floor(centiseconds / 6000);
+      const wholeSeconds = Math.floor(centiseconds / 100) % 60;
+      const fraction = centiseconds % 100;
+      return `[${String(minutes).padStart(2, "0")}:${String(wholeSeconds).padStart(2, "0")}.${String(fraction).padStart(2, "0")}]`;
+    }
+
+    function markLine(index) {
+      const rows = getLineRows();
+      if (!rows.length) {
+        showMessage("Carregue ou digite a letra antes de marcar uma linha.", true);
+        return;
+      }
+
+      const lineText = rows[index].querySelector(".line-text");
+      const line = lineText.textContent;
+      if (!line.trim()) {
+        showMessage("A linha selecionada está vazia.", true);
+        return;
+      }
+
+      const timestamp = makeTimestamp(audio.currentTime);
+      lineText.textContent = `${timestamp}${line.replace(timestampPrefix, "")}`;
+      setActiveLine(Math.min(index + 1, rows.length - 1), true);
+      showMessage(index < rows.length - 1
+        ? `Tempo ${timestamp} registrado. Próxima linha pronta.`
+        : `Tempo ${timestamp} registrado na última linha.`);
+    }
+
+    async function playLine(index) {
+      if (!audio.src) {
+        showMessage("Carregue uma música antes de reproduzir uma linha.", true);
+        return;
+      }
+
+      const line = getLineRows()[index]?.querySelector(".line-text").textContent ?? "";
+      const match = line.match(timestampAtStart);
+      if (!match) {
+        showMessage("Esta linha ainda não tem uma marcação de tempo.", true);
+        return;
+      }
+
+      const milliseconds = Number((match[3] ?? "").padEnd(3, "0"));
+      audio.currentTime = Number(match[1]) * 60 + Number(match[2]) + milliseconds / 1000;
+      setActiveLine(index);
+      try {
+        await audio.play();
+        showMessage(`Reprodução iniciada em ${formatClock(audio.currentTime)}.`);
+      } catch (error) {
+        showMessage(`Não foi possível iniciar a reprodução: ${error.message}`, true);
+      }
+    }
+
+    audioFile.addEventListener("change", () => {
+      const file = audioFile.files[0];
+      if (!file) return;
+      if (audioUrl) URL.revokeObjectURL(audioUrl);
+      audioUrl = URL.createObjectURL(file);
+      audio.src = audioUrl;
+      audio.load();
+      trackName.textContent = file.name;
+      showMessage(`Música carregada: ${file.name}`);
+    });
+
+    lyricsFile.addEventListener("change", async () => {
+      const file = lyricsFile.files[0];
+      if (!file) return;
+      try {
+        renderLines((await file.text()).split(/\r\n|\r|\n/));
+        saveName.value = `${file.name.replace(/\.[^.]+$/, "")}.lrc`;
+        showMessage(`Letra carregada: ${file.name}`);
+      } catch (error) {
+        showMessage(`Não foi possível abrir a letra: ${error.message}`, true);
+      }
+    });
+
+
+    audio.addEventListener("timeupdate", () => {
+      clock.textContent = `${formatClock(audio.currentTime)} / ${formatClock(audio.duration)}`;
+    });
+    audio.addEventListener("loadedmetadata", () => {
+      clock.textContent = `${formatClock(audio.currentTime)} / ${formatClock(audio.duration)}`;
+    });
+    audio.addEventListener("error", () => {
+      showMessage("O navegador não conseguiu decodificar o áudio. Tente um navegador com o codec necessário ou converta a música para MP3/WAV.", true);
+    });
+
+    editor.addEventListener("click", (event) => {
+      const row = event.target.closest(".lyric-line");
+      if (!row) return;
+      const index = getLineRows().indexOf(row);
+      setActiveLine(index);
+
+      const action = event.target.closest("button")?.dataset.action;
+      if (action === "timer") markLine(index);
+      if (action === "play") playLine(index);
+      if (action === "delete") deleteLine(index);
+    });
+
+    editor.addEventListener("focusin", (event) => {
+      const row = event.target.closest(".lyric-line");
+      if (row) setActiveLine(getLineRows().indexOf(row));
+    });
+
+    editor.addEventListener("input", (event) => {
+      if (!event.target.matches(".line-text")) return;
+      const row = event.target.closest(".lyric-line");
+      const index = getLineRows().indexOf(row);
+      if (/[\r\n]/.test(event.target.textContent)) {
+        event.target.textContent = event.target.textContent.replace(/[\r\n]+/g, " ");
+      }
+      setActiveLine(index);
+    });
+
+    editor.addEventListener("keydown", (event) => {
+      const text = event.target.closest(".line-text");
+      if (!text || (event.key !== "Enter" && event.key !== "Backspace")) return;
+
+      const row = text.closest(".lyric-line");
+      const rows = getLineRows();
+      const index = rows.indexOf(row);
+      const selection = window.getSelection();
+      if (!selection.rangeCount) return;
+      const range = selection.getRangeAt(0);
+      const start = getTextOffset(text, range.startContainer, range.startOffset);
+      const end = getTextOffset(text, range.endContainer, range.endOffset);
+      const lines = getLines();
+
+      if (event.key === "Enter") {
+        event.preventDefault();
+        const line = lines[index];
+        renderLines([
+          ...lines.slice(0, index),
+          line.slice(0, start),
+          line.slice(end),
+          ...lines.slice(index + 1)
+        ], index + 1);
+        setActiveLine(index + 1, true);
+        return;
+      }
+
+      if (start !== 0 || end !== 0 || index === 0) return;
+      event.preventDefault();
+      const previousLine = lines[index - 1];
+      renderLines([
+        ...lines.slice(0, index - 1),
+        previousLine + lines[index],
+        ...lines.slice(index + 1)
+      ], index - 1);
+      const previousText = getLineRows()[index - 1].querySelector(".line-text");
+      setActiveLine(index - 1, true);
+      placeCaret(previousText, previousLine.length);
+    });
+
+    document.getElementById("markButton").addEventListener("click", () => markLine(activeLine));
+
+    document.getElementById("clearButton").addEventListener("click", () => {
+      const lines = getLines();
+      let cleared = 0;
+      renderLines(lines.map((line) => line.replace(timestampPrefix, () => {
+        cleared += 1;
+        return "";
+      })), activeLine);
+      showMessage(cleared
+        ? `${cleared} marcação(ões) de tempo removida(s).`
+        : "Nenhuma marcação de tempo encontrada.");
+    });
+
+    document.getElementById("removeEmptyLinesButton").addEventListener("click", () => {
+      const lines = getLines();
+      const keptLines = lines.filter((line) => line.trim() !== "");
+      const removed = lines.length - keptLines.length;
+      renderLines(keptLines.length ? keptLines : [""]);
+      showMessage(removed
+        ? `${removed} linha(s) vazia(s) removida(s).`
+        : "Nenhuma linha vazia encontrada.");
+    });
+
+    document.getElementById("removeBracketLinesButton").addEventListener("click", () => {
+      const lines = getLines();
+      let removed = 0;
+      const keptLines = lines.filter((line) => {
+        const hasBracketedText = [...line.matchAll(/\[([^\]\r\n]+)\]/g)].some((match) =>
+          !/^\d+:\d{2}(?:\.\d{1,3})?$/.test(match[1])
+        );
+        if (hasBracketedText) removed += 1;
+        return !hasBracketedText;
+      });
+      renderLines(keptLines);
+      showMessage(removed
+        ? `${removed} linha(s) com texto entre colchetes removida(s).`
+        : "Nenhuma linha com texto entre colchetes encontrada.");
+    });
+
+    document.getElementById("saveButton").addEventListener("click", async () => {
+      let filename = saveName.value.trim() || "letra.lrc";
+      filename = filename.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_");
+      if (!filename.toLowerCase().endsWith(".lrc")) filename += ".lrc";
+
+      if (window.showSaveFilePicker) {
+        try {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: filename,
+            types: [{ description: "Arquivo de letras LRC", accept: { "text/plain": [".lrc"] } }]
+          });
+          const writable = await handle.createWritable();
+          await writable.write(getLines().join("\n"));
+          await writable.close();
+          showMessage(`Arquivo salvo: ${handle.name}`);
+          return;
+        } catch (error) {
+          if (error.name === "AbortError") return;
+          showMessage(`Não foi possível salvar o arquivo: ${error.message}`, true);
+          return;
+        }
+      }
+
+      const url = URL.createObjectURL(new Blob([getLines().join("\n")], { type: "text/plain;charset=utf-8" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showMessage(`Download iniciado: ${filename}`);
+    });
+
+    document.addEventListener("keydown", (event) => {
+      // console.log(event.code)
+      // console.log(event.target)
+      // if (event.code !== "Enter" || event.repeat || event.ctrlKey || event.altKey || event.metaKey) return;
+      // const target = event.target;
+      if (event.target.className == "line-text" && event.code == "ArrowDown") {
+        markLine(activeLine);
+      } else {
+        return;
+      }
+      
+      // if (target.isContentEditable
+      //     || target instanceof HTMLButtonElement
+      //     || target instanceof HTMLInputElement
+      //     || target instanceof HTMLSelectElement
+      //     || target instanceof HTMLAnchorElement) return;
+      event.preventDefault();
+      
+    });
+
+    renderLines([""]);
+  </script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "none",
+    "strict": true,
+    "lib": ["DOM", "ES2020"],
+    "outDir": "dist-ts",
+    "removeComments": false
+  },
+  "include": ["src/**/*.ts"]
+}

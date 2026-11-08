@@ -1,0 +1,9 @@
+{
+  "name": "lrc-editor",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "build": "tsc"
+  },
+  "devDependencies": { "typescript": "^5.7.0" }
+}
